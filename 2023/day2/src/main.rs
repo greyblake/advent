@@ -67,7 +67,7 @@ mod parser {
         let (input, id) = digit1(input)?;
         let (input, _) = tag(":")(input)?;
         let (input, _) = space1(input)?;
-        let (input, grabs) = separated_list1(semicolon, grab)(input)?;
+        let (input, grabs) = separated_list1(semicolon_trimmed, grab)(input)?;
         Ok((
             input,
             Game {
@@ -77,20 +77,22 @@ mod parser {
         ))
     }
 
-    fn comma(input: &str) -> IResult<&str, &str> {
+    fn comma_trimmed(input: &str) -> IResult<&str, &str> {
         let (input, _) = space0(input)?;
         let (input, _) = tag(",")(input)?;
-        space0(input)
+        let (input, _) = space0(input)?;
+        Ok((input, ","))
     }
 
-    fn semicolon(input: &str) -> IResult<&str, &str> {
+    fn semicolon_trimmed(input: &str) -> IResult<&str, &str> {
         let (input, _) = space0(input)?;
         let (input, _) = tag(";")(input)?;
-        space0(input)
+        let (input, _) = space0(input)?;
+        Ok((input, ";"))
     }
 
     fn grab(input: &str) -> IResult<&str, Grab> {
-        map(separated_list1(comma, number_color), |list| {
+        map(separated_list1(comma_trimmed, number_color), |list| {
             list.into_iter()
                 .fold(Grab::default(), |mut grab, (number, color)| {
                     match color {
