@@ -1,10 +1,12 @@
 fn main() {
     let input = include_str!("input.txt");
     let games = parser::parse_games(input);
-    let possible_games = games.iter().filter(|game| is_possible_game(game));
-    let possible_game_ids = possible_games.map(|game| game.id);
-    let sum_of_ids_of_possible_games = possible_game_ids.sum::<i32>();
-    println!("Sum: {sum_of_ids_of_possible_games}");
+    let sum_of_ids = games
+        .iter()
+        .filter(|game| is_possible_game(game))
+        .map(|game| game.id)
+        .sum::<i32>();
+    println!("Sum: {sum_of_ids}");
 }
 
 #[derive(Debug, PartialEq)]
@@ -21,7 +23,6 @@ struct Grab {
     green: i32,
 }
 
-
 fn is_possible_game(game: &Game) -> bool {
     game.grabs.iter().all(is_possible_grab)
 }
@@ -29,7 +30,6 @@ fn is_possible_game(game: &Game) -> bool {
 fn is_possible_grab(grab: &Grab) -> bool {
     grab.red <= 12 && grab.green <= 13 && grab.blue <= 14
 }
-
 
 mod parser {
     use super::*;
@@ -42,7 +42,6 @@ mod parser {
         IResult,
     };
 
-
     // Parse games separated by a new line
     pub fn parse_games(input: &str) -> Vec<Game> {
         games(input).expect("Failed to parse").1
@@ -51,7 +50,6 @@ mod parser {
     fn games(input: &str) -> IResult<&str, Vec<Game>> {
         separated_list1(tag("\n"), game)(input)
     }
-
 
     #[derive(Debug, PartialEq)]
     enum Color {
