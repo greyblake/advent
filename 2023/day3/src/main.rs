@@ -5,17 +5,7 @@ fn main() {
 }
 
 fn compute(input: &str) -> u32 {
-    let numbers: Vec<Number> = input
-        .lines()
-        .enumerate()
-        .flat_map(|(y, line)| parse_line_for_numbers(y, line))
-        .collect();
-
-    let symbols: Vec<Symbol> = input
-        .lines()
-        .enumerate()
-        .flat_map(|(y, line)| parse_line_for_symbols(y, line))
-        .collect();
+    let (numbers, symbols) = parsing::parse(input);
 
     numbers
         .iter()
@@ -92,120 +82,132 @@ fn is_adjusted_to_one_of_symbols(number: &Number, symbols: &[Symbol]) -> bool {
     false
 }
 
-// TODO: refactor
-// * Use better types for state
-// * DRY termination of number
-fn parse_line_for_numbers(y: usize, line: &str) -> Vec<Number> {
-    let mut numbers: Vec<Number> = Vec::new();
+mod parsing {
+    use super::*;
 
-    let mut buf = String::with_capacity(4);
-    let mut start_x = None;
+    pub fn parse(input: &str) -> (Vec<Number>, Vec<Symbol>) {
+        let mut numbers: Vec<Number> = vec![];
+        let mut symbols: Vec<Symbol> = vec![];
 
-    line.chars().enumerate().for_each(|(x, c)| match c {
-        '0'..='9' => {
-            buf.push(c);
-            if start_x.is_none() {
-                start_x = Some(x);
+        let mut state = StateMachine::default();
+
+        let mut handle_output = |output: Option<Output>| match output {
+            Some(Output::Number(number)) => numbers.push(number),
+            Some(Output::Symbol(symbol)) => symbols.push(symbol),
+            None => {}
+        };
+
+        for (y, line) in input.lines().enumerate() {
+            for (x, ch) in line.chars().enumerate() {
+                let out = state.feed_char(x, y, ch);
+                handle_output(out);
             }
+            handle_output(state.flush());
         }
-        _ => {
-            if !buf.is_empty() {
-                let number = buf.parse::<u32>().unwrap();
-                numbers.push(Number {
-                    value: number,
-                    pos: Pos {
-                        x: start_x.unwrap(),
-                        y,
-                    },
-                    size: buf.len(),
-                });
+        handle_output(state.flush());
 
-                buf.clear();
-                start_x = None;
-            }
-        }
-    });
-
-    if !buf.is_empty() {
-        let number = buf.parse::<u32>().unwrap();
-        numbers.push(Number {
-            value: number,
-            pos: Pos {
-                x: start_x.unwrap(),
-                y,
-            },
-            size: buf.len(),
-        });
-
-        buf.clear();
-        start_x = None;
+        (numbers, symbols)
     }
 
-    numbers
-}
+    #[derive(Debug, Default)]
+    enum StateMachine {
+        #[default]
+        Empty,
+        Number(Pos, String),
+        Symbol(Pos, char),
+    }
 
-// TODO: combine it with parse_line_for_numbers()
-fn parse_line_for_symbols(y: usize, line: &str) -> Vec<Symbol> {
-    let mut symbols: Vec<Symbol> = Vec::new();
+    enum Output {
+        Number(Number),
+        Symbol(Symbol),
+    }
 
-    line.chars().enumerate().for_each(|(x, c)| match c {
-        '0'..='9' | '.' => { },
-        ch => {
-            symbols.push(Symbol {
-                value: ch,
-                pos: Pos { x, y },
-            });
+    impl StateMachine {
+        fn feed_char(&mut self, x: usize, y: usize, input_char: char) -> Option<Output> {
+            let current_state = std::mem::take(self);
+
+            let (new_state, res) = match current_state {
+                StateMachine::Empty => {
+                    match input_char {
+                        '0'..='9' => {
+                            // Start a new number
+                            let pos = Pos { x, y };
+                            let s = String::from(input_char);
+                            (StateMachine::Number(pos, s), None)
+                        }
+                        '.' => {
+                            // Do nothing, skip
+                            (StateMachine::Empty, None)
+                        }
+                        sym => {
+                            // Put a new symbol to the state
+                            let pos = Pos { x, y };
+                            (StateMachine::Symbol(pos, sym), None)
+                        }
+                    }
+                }
+                StateMachine::Number(num_pos, mut num_str) => {
+                    match input_char {
+                        '0'..='9' => {
+                            // Attach a new digit to the current number
+                            num_str.push(input_char);
+                            (StateMachine::Number(num_pos, num_str), None)
+                        }
+                        '.' => {
+                            // Flush the current number and set empty state
+                            (StateMachine::Empty, output_number(num_pos, num_str))
+                        }
+                        sym => {
+                            let sym_pos = Pos { x, y };
+                            (
+                                StateMachine::Symbol(sym_pos, sym),
+                                output_number(num_pos, num_str),
+                            )
+                        }
+                    }
+                }
+                StateMachine::Symbol(sym_pos, sym_ch) => {
+                    match input_char {
+                        '0'..='9' => {
+                            // Start a new number
+                            let pos = Pos { x, y };
+                            let s = String::from(input_char);
+                            (StateMachine::Number(pos, s), output_symbol(sym_pos, sym_ch))
+                        }
+                        '.' => (StateMachine::Empty, output_symbol(sym_pos, sym_ch)),
+                        sym => {
+                            let pos = Pos { x, y };
+                            let new_state = StateMachine::Symbol(pos, sym);
+                            (new_state, output_symbol(sym_pos, sym_ch))
+                        }
+                    }
+                }
+            };
+
+            *self = new_state;
+            res
         }
-        _ => {}
-    });
 
-    symbols
-}
-
-#[test]
-fn should_parse_line_for_numbers() {
-    let line = "..35..633";
-    let numbers = parse_line_for_numbers(15, line);
-
-    assert_eq!(numbers.len(), 2);
-    assert_eq!(
-        numbers[0],
-        Number {
-            value: 35,
-            pos: Pos { x: 2, y: 15 },
-            size: 2,
+        fn flush(&mut self) -> Option<Output> {
+            let state = std::mem::take(self);
+            match state {
+                StateMachine::Empty => None,
+                StateMachine::Symbol(pos, value) => output_symbol(pos, value),
+                StateMachine::Number(pos, s) => output_number(pos, s),
+            }
         }
-    );
-    assert_eq!(
-        numbers[1],
-        Number {
-            value: 633,
-            pos: Pos { x: 6, y: 15 },
-            size: 3,
-        }
-    );
-}
+    }
 
-#[test]
-fn should_parse_line_for_symbols() {
-    let line = "617*.$.";
-    let symbols = parse_line_for_symbols(0, line);
+    fn output_number(pos: Pos, s: String) -> Option<Output> {
+        let size = s.len();
+        let value: u32 = s.parse().expect("Invalid number");
+        let number = Number { pos, size, value };
+        Some(Output::Number(number))
+    }
 
-    assert_eq!(symbols.len(), 2);
-    assert_eq!(
-        symbols[0],
-        Symbol {
-            value: '*',
-            pos: Pos { x: 3, y: 0 },
-        }
-    );
-    assert_eq!(
-        symbols[1],
-        Symbol {
-            value: '$',
-            pos: Pos { x: 5, y: 0 },
-        }
-    );
+    fn output_symbol(pos: Pos, value: char) -> Option<Output> {
+        Some(Output::Symbol(Symbol { pos, value }))
+    }
 }
 
 #[test]
