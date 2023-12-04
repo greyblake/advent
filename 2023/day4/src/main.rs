@@ -26,8 +26,9 @@ fn compute_part2(input: &str) -> u32 {
         let matches = card.count_matches();
 
         // Add copies for the cards to the next cards
-        let from_index = (card_index + 1).clamp(0, cards.len() - 1);
-        let to_index = (card_index + 1 + matches as usize).clamp(0, cards.len() - 1);
+        // TODO: clamp the bounds?
+        let from_index = card_index + 1;
+        let to_index = card_index + 1 + matches as usize;
         for i in from_index..to_index {
             cards_count[i] += copies_count
         }
